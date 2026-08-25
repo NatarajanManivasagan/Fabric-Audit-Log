@@ -1,0 +1,10 @@
+# Power BI local/session files (never commit)
+**/.pbi/
+**/*.abf
+**/localSettings.json
+# Python
+__pycache__/
+*.pyc
+# OS
+.DS_Store
+Thumbs.db
