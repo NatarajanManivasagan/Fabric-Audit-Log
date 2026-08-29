@@ -19,6 +19,8 @@ workspace roles into a lakehouse, and a Power BI report answers five questions o
 | 📓 **[NB_Semantic_Model_Access_Audit.ipynb](NB_Semantic_Model_Access_Audit.ipynb)** | The Fabric notebook. Paste service-principal credentials, list the `(workspace, model)` pairs to audit, and run top to bottom. It's **DataFrame-first** — writes nothing until you choose to persist to Delta tables or export CSVs. |
 | 📄 **[Read the deep-dive](Single%20Part%20-%20Power%20BI%20Access%20Audit%20in%20Fabric%20%28Deep%20Dive%29.md)** | The whole story in one post. Also as a two-part series: **[Part 1 — the pipeline](Part%201%20-%20Building%20the%20Power%20BI%20Access%20Audit%20Pipeline%20in%20Fabric.md)** · **[Part 2 — the model & report](Part%202%20-%20The%20Semantic%20Model%20and%20Audit%20Report.md)**. |
 | 📊 **[contoso-access-audit-pbip.zip](contoso-access-audit-pbip.zip)** | The sample Power BI report + model (PBIP). Unzip to `C:\ContosoAccessAudit`, open the `.pbip` in Power BI Desktop, hit **Refresh** — it opens on fabricated data, with no tenant or credentials required. |
+| 🗂️ **[SCHEMA.md](SCHEMA.md)** | The six lakehouse tables — every column, type, and grain — so you can see what the notebook produces without reading the code. |
+| ✅ **[TESTING.md](TESTING.md)** | How the code is verified: offline checks against the sample data, plus a live smoke-test checklist and the known gotchas. |
 
 ## Quick start (the notebook)
 

@@ -10,7 +10,7 @@
 > click around while you read. ([Details below.](#download-the-sample-report))
 >
 > 📓 The whole pipeline is also compiled into one runnable notebook —
-> **[`NB_Semantic_Model_Access_Audit.ipynb`](assets/NB_Semantic_Model_Access_Audit.ipynb)** with a built-in validation section
+> **[`NB_Semantic_Model_Access_Audit.ipynb`](NB_Semantic_Model_Access_Audit.ipynb)** with a built-in validation section
 > ([get it below](#get-the-notebook--and-check-its-correct)).
 
 **Contents:** [The problem](#the-problem) · [Architecture](#solution-architecture) · [Prerequisites](#prerequisites) · [Step 1 — Inventory](#step-1--load-the-model-inventory-from-sharepoint) · [Step 2 — RLS/OLS](#step-2--extract-rls-and-ols-with-semantic-link-labs-tom) · [Step 3 — Memberships](#step-3--role-memberships-and-the-query-scale-out-trap) · [Step 4 — Graph](#step-4--expand-ad-groups-into-users-via-microsoft-graph) · [Step 5 — Workspace roles](#step-5--workspace-role-assignments-via-the-fabric-rest-api) · [Notebook & testing](#get-the-notebook--and-check-its-correct) · [Semantic model](#the-semantic-model) · [The report](#the-report) · [Extensions](#extensions) · [Download](#download-the-sample-report) · [Lessons learned](#lessons-learned)
@@ -62,6 +62,14 @@ SharePoint inventory ──►  Notebook 1: model inventory        ──►  pb
                                                           Semantic model + audit report
 ```
 
+> 🧭 **How the code is organized.** The steps below show the *essence* of each stage — the one call that matters and
+> the shape of the row it produces — so the walkthrough stays readable. The complete, runnable code lives in a single
+> notebook in the companion repo: **[`NB_Semantic_Model_Access_Audit.ipynb`](NB_Semantic_Model_Access_Audit.ipynb)**.
+> That notebook is the **self-contained** variant — an inline `MODELS` list instead of the SharePoint inventory, and
+> **DataFrame-first** (it writes nothing until you opt in). The snippets here show the fuller **production** shape
+> (SharePoint inventory → Delta tables); the [notebook & testing](#get-the-notebook--and-check-its-correct) section
+> explains the difference and how to prove a run is correct.
+
 ---
 
 ## Prerequisites
@@ -91,53 +99,27 @@ This is the part that takes longer than the code.
 | `pbi_workspace_access_audit_details` | workspace × principal | Q4 — workspace roles |
 | `pbi_role_personas` | persona | business description of each role's filters |
 
+> 📋 See **[`SCHEMA.md`](SCHEMA.md)** for every column, type, and grain across all six tables.
+
 ---
 
 ## Step 1 — Load the model inventory from SharePoint
 
+Scope lives in one SharePoint workbook — adding a model to the audit is adding a row. Authenticate as the service
+principal, pull the workbook through Microsoft Graph, and land it as the scope table:
+
 ```python
-import msal, requests, json
-import pandas as pd
+# MSAL client-credentials token (Graph scope), then download the inventory workbook
+headers = graph_headers(config)                 # Authorization: Bearer …
+site = graph_get(".../sites/contoso.sharepoint.com:/sites/BIGovernance")
+xlsx = graph_get(f".../sites/{site['id']}/drive/root:/PBI Governance/Model Inventory.xlsx:/content")
 
-with open("/lakehouse/default/Files/pbi_security_audit/config.json") as f:
-    config = json.load(f)
-
-app = msal.ConfidentialClientApplication(
-    config["CLIENT_ID"],
-    authority=f"https://login.microsoftonline.com/{config['TENANT_ID']}",
-    client_credential=config["CLIENT_SECRET"],
-)
-token = app.acquire_token_for_client(
-    scopes=["https://graph.microsoft.com/.default"]
-)["access_token"]
-headers = {"Authorization": f"Bearer {token}"}
-
-# Resolve the SharePoint site, download the workbook via Graph
-site = requests.get(
-    "https://graph.microsoft.com/v1.0/sites/contoso.sharepoint.com:/sites/BIGovernance",
-    headers=headers,
-).json()
-
-content = requests.get(
-    f"https://graph.microsoft.com/v1.0/sites/{site['id']}/drive/root:"
-    f"/PBI Governance/Model Inventory.xlsx:/content",
-    headers=headers,
-).content
-
-local_path = "/lakehouse/default/Files/pbi_security_audit/Model Inventory.xlsx"
-with open(local_path, "wb") as f:
-    f.write(content)
-
-df = pd.read_excel(local_path, sheet_name="Self Service Models", dtype=str)
-(
-    spark.createDataFrame(df)
-    .write.format("delta").mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable("pbi_security_audit.dbo.pbi_model_details")
-)
+df = pd.read_excel(xlsx, sheet_name="Self Service Models", dtype=str)
+#  ->  Workspace_Name | Semantic_Model_Name      (one row per model to audit)
 ```
 
-*(In our environment this is wrapped in a utility that skips the download when the file hasn't changed — worth adding once scheduled.)*
+> 📓 **Full runnable code:** [Step 1 in the notebook →](NB_Semantic_Model_Access_Audit.ipynb) *(the self-contained
+> version skips SharePoint — you list the `(workspace, model)` pairs inline in a `MODELS` variable).*
 
 ---
 
@@ -149,120 +131,28 @@ The heart of the solution. For every model in the inventory we open a **read-onl
 - **OLS:** `MetadataPermission` on tables/columns. Table-level `None` → one collapsed row (`Column_Name = "*"`); otherwise one row per column with effective visibility (`Hidden`/`Visible`).
 
 ```python
-import json
-from sempy.fabric import set_service_principal
-from sempy_labs.tom import connect_semantic_model
-from pyspark.sql import Row
-from pyspark.sql.types import StructType, StructField, StringType
+set_service_principal(config["TENANT_ID"], config["CLIENT_ID"], config["CLIENT_SECRET"])
 
-with open("/lakehouse/default/Files/pbi_security_audit/config.json") as f:
-    config = json.load(f)
+with connect_semantic_model(dataset, workspace, readonly=True) as tom:
+    for role in tom.model.Roles:
+        # RLS — the DAX filter this role applies to a table
+        for perm in role.TablePermissions:
+            if perm.FilterExpression:
+                emit(role.Name, perm.Table.Name, filter=perm.FilterExpression, kind="RLS")
 
-with set_service_principal(
-    tenant_id=config["TENANT_ID"],
-    client_id=config["CLIENT_ID"],
-    client_secret=config["CLIENT_SECRET"],
-):
-    model_rows = spark.sql("""
-        SELECT DISTINCT Workspace_Name, Semantic_Model_Name
-        FROM pbi_security_audit.dbo.pbi_model_details
-    """).collect()
-
-    security_rows = []
-
-    for r in model_rows:
-        workspace, dataset = r["Workspace_Name"], r["Semantic_Model_Name"]
-        try:
-            with connect_semantic_model(
-                dataset=dataset, workspace=workspace, readonly=True
-            ) as tom:
-
-                for role in tom.model.Roles:
-                    role_name = str(role.Name)
-
-                    role_ols_map = {
-                        str(tp.Table.Name): {
-                            "Table_Permission": str(tp.MetadataPermission),
-                            "Columns": {
-                                str(cp.Column.Name): str(cp.MetadataPermission)
-                                for cp in tp.ColumnPermissions
-                            },
-                        }
-                        for tp in role.TablePermissions
-                    }
-
-                    # ---- RLS filter expressions ---------------------------
-                    for perm in role.TablePermissions:
-                        expr = perm.FilterExpression
-                        if expr and str(expr).strip():
-                            security_rows.append(Row(
-                                Workspace=workspace, Semantic_Model=dataset,
-                                Role_Name=role_name,
-                                Table_Name=str(perm.Table.Name),
-                                Column_Name=None,
-                                Filter=str(expr).strip(), Filter_Type="RLS",
-                                OLS_Level=None, Column_Permission=None,
-                                Effective_Visibility=None, Error_Message=None,
-                            ))
-
-                    # ---- OLS visibility per table/column ------------------
-                    for table in tom.model.Tables:
-                        table_name = str(table.Name)
-                        sec = role_ols_map.get(
-                            table_name,
-                            {"Table_Permission": "Read", "Columns": {}},
-                        )
-
-                        if sec["Table_Permission"] == "None":   # whole table hidden
-                            security_rows.append(Row(
-                                Workspace=workspace, Semantic_Model=dataset,
-                                Role_Name=role_name, Table_Name=table_name,
-                                Column_Name="*", Filter=None, Filter_Type="OLS",
-                                OLS_Level="Table", Column_Permission="None",
-                                Effective_Visibility="Hidden", Error_Message=None,
-                            ))
-                            continue
-
-                        for column in table.Columns:
-                            if str(column.Type) == "RowNumber":
-                                continue
-                            col = str(column.Name)
-                            col_perm = sec["Columns"].get(col, "Read")
-                            security_rows.append(Row(
-                                Workspace=workspace, Semantic_Model=dataset,
-                                Role_Name=role_name, Table_Name=table_name,
-                                Column_Name=col, Filter=None, Filter_Type="OLS",
-                                OLS_Level="Column" if col in sec["Columns"] else "None",
-                                Column_Permission=col_perm,
-                                Effective_Visibility="Hidden" if col_perm == "None" else "Visible",
-                                Error_Message=None,
-                            ))
-
-        except Exception as e:
-            print(f"Error processing {dataset}: {e} "
-                  "— check that the service principal is added to the workspace")
-            security_rows.append(Row(
-                Workspace=workspace, Semantic_Model=dataset, Role_Name=None,
-                Table_Name=None, Column_Name=None, Filter=None,
-                Filter_Type="ERROR", OLS_Level=None, Column_Permission=None,
-                Effective_Visibility=None, Error_Message=str(e),
-            ))
-
-    schema = StructType([
-        StructField(c, StringType(), True) for c in [
-            "Workspace", "Semantic_Model", "Role_Name", "Table_Name",
-            "Column_Name", "Filter", "Filter_Type", "OLS_Level",
-            "Column_Permission", "Effective_Visibility", "Error_Message",
-        ]
-    ])
-
-    (
-        spark.createDataFrame(security_rows, schema=schema)
-        .write.format("delta").mode("overwrite")
-        .option("overwriteSchema", "true")
-        .saveAsTable("pbi_security_audit.dbo.pbi_model_security_audit_details")
-    )
+        # OLS — walk every table/column, default to Read, record what's hidden
+        for table in tom.model.Tables:
+            for column in table.Columns:
+                emit(role.Name, table.Name, column.Name,
+                     visibility=effective_visibility(role, table, column), kind="OLS")
 ```
+
+A model the service principal *can't* read is caught and written as a `Filter_Type = "ERROR"` row rather than failing
+the run — "we can't see this model" is itself an audit finding.
+
+> 📓 **Full runnable code:** [Step 2 in the notebook →](NB_Semantic_Model_Access_Audit.ipynb) — the real
+> `emit`/`effective_visibility` logic (table-level blackouts collapse to a `Column_Name = "*"` row; `RowNumber`
+> columns are skipped) plus the eleven-column output schema.
 
 Sample output (fabricated):
 
@@ -302,104 +192,25 @@ Great interactively — until it hit a model with **query scale-out** enabled. S
 **The workaround:** check `queryScaleOutSettings` via the Power BI REST API; if scale-out is on, temporarily set `maxReadOnlyReplicas = 0`, wait for replicas to drain, extract via TOM on the primary, then **restore the original setting**:
 
 ```python
-import msal, requests, json, time
-import pandas as pd
-from sempy.fabric import set_service_principal
-from sempy_labs.tom import connect_semantic_model
+for workspace, dataset in models:
+    settings = get_scaleout_settings(ws_id, ds_id)          # Power BI REST
+    if settings.get("maxReadOnlyReplicas", 0):              # scale-out on?
+        update_scaleout(ws_id, ds_id, {"maxReadOnlyReplicas": 0})
+        time.sleep(300)                                     # let read replicas drain
 
-with open("/lakehouse/default/Files/pbi_security_audit/config.json") as f:
-    config = json.load(f)
+    with connect_semantic_model(workspace, dataset, readonly=True) as tom:
+        for role in tom.model.Roles:
+            for member in role.Members:
+                emit(role.Name, member.MemberID)            # Entra object ID = join key
 
-app = msal.ConfidentialClientApplication(
-    config["CLIENT_ID"],
-    authority=f"https://login.microsoftonline.com/{config['TENANT_ID']}",
-    client_credential=config["CLIENT_SECRET"],
-)
-token = app.acquire_token_for_client(
-    scopes=["https://analysis.windows.net/powerbi/api/.default"]
-)["access_token"]
-headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-PBI = "https://api.powerbi.com/v1.0/myorg"
-
-
-def get_workspace_id(name):
-    groups = requests.get(f"{PBI}/groups", headers=headers).json()["value"]
-    return next((g["id"] for g in groups if g["name"] == name), None)
-
-def get_dataset_id(ws_id, name):
-    ds = requests.get(f"{PBI}/groups/{ws_id}/datasets", headers=headers).json()["value"]
-    return next((d["id"] for d in ds if d["name"] == name), None)
-
-def get_scaleout_settings(ws_id, ds_id):
-    r = requests.get(f"{PBI}/groups/{ws_id}/datasets/{ds_id}", headers=headers)
-    return r.json().get("queryScaleOutSettings", {})
-
-def update_scaleout(ws_id, ds_id, settings):
-    requests.patch(
-        f"{PBI}/groups/{ws_id}/datasets/{ds_id}", headers=headers,
-        data=json.dumps({"queryScaleOutSettings": settings}),
-    ).raise_for_status()
-
-
-model_rows = spark.sql("""
-    SELECT DISTINCT Workspace_Name, Semantic_Model_Name
-    FROM pbi_security_audit.dbo.pbi_model_details
-""").collect()
-
-all_results = []
-
-for row in model_rows:
-    workspace, dataset = row["Workspace_Name"], row["Semantic_Model_Name"]
-    print(f"Processing: {workspace} | {dataset}")
-    try:
-        ws_id = get_workspace_id(workspace)
-        ds_id = get_dataset_id(ws_id, dataset)
-        if not ws_id or not ds_id:
-            print("  Workspace or dataset not found — skipping.")
-            continue
-
-        original = get_scaleout_settings(ws_id, ds_id)
-        scaleout_enabled = original.get("maxReadOnlyReplicas", 0) != 0
-
-        if scaleout_enabled:
-            print("  Scale-out enabled — disabling temporarily...")
-            update_scaleout(ws_id, ds_id, {"maxReadOnlyReplicas": 0})
-            time.sleep(300)  # allow replicas to sync out
-
-        with set_service_principal(
-            tenant_id=config["TENANT_ID"],
-            client_id=config["CLIENT_ID"],
-            client_secret=config["CLIENT_SECRET"],
-        ):
-            with connect_semantic_model(
-                workspace=workspace, dataset=dataset, readonly=True
-            ) as tom:
-                for role in tom.model.Roles:
-                    for member in role.Members:
-                        all_results.append({
-                            "Workspace": workspace,
-                            "Semantic_Model": dataset,
-                            "Role_Name": str(role.Name),
-                            "Member_ID": str(member.MemberID),  # Entra object ID
-                        })
-
-        if scaleout_enabled:
-            print("  Restoring original scale-out settings...")
-            update_scaleout(ws_id, ds_id, original)
-
-    except Exception as e:
-        print("  Error:", e)
-
-if all_results:
-    (
-        spark.createDataFrame(pd.DataFrame(all_results)).distinct()
-        .write.format("delta").mode("overwrite")
-        .option("overwriteSchema", "true")
-        .saveAsTable("pbi_security_audit.dbo.pbi_model_security_role_association_details")
-    )
+    update_scaleout(ws_id, ds_id, settings)                 # ALWAYS restore
 ```
 
 > 💡 Budget for the drain wait per scale-out model, and make sure the *restore* runs even on failure (`try/finally` if you extend this). The PATCH needs write access on the dataset — workspace Contributor or above.
+
+> 📓 **Full runnable code:** [Step 3 in the notebook →](NB_Semantic_Model_Access_Audit.ipynb) — including the
+> `get_workspace_id` / `get_dataset_id` / `get_scaleout_settings` / `update_scaleout` REST helpers and the per-model
+> error handling.
 
 ---
 
@@ -408,60 +219,22 @@ if all_results:
 Roles map to **Entra ID groups**, not individuals. We follow a naming convention (`pbi-sec-*`) for all BI security groups, so one filtered Graph query finds them all, and a second pass pulls members:
 
 ```python
-import msal, requests, json
-
-with open("/lakehouse/default/Files/pbi_security_audit/config.json") as f:
-    config = json.load(f)
-
-app = msal.ConfidentialClientApplication(
-    config["CLIENT_ID"],
-    authority=f"https://login.microsoftonline.com/{config['TENANT_ID']}",
-    client_credential=config["CLIENT_SECRET"],
-)
-token = app.acquire_token_for_client(
-    scopes=["https://graph.microsoft.com/.default"]
-)["access_token"]
-headers = {"Authorization": f"Bearer {token}"}
-
-url = ("https://graph.microsoft.com/v1.0/groups"
-       "?$filter=startswith(displayName,'pbi-sec')&$select=id,displayName")
-groups = []
-while url:
-    data = requests.get(url, headers=headers).json()
-    groups.extend(data.get("value", []))
-    url = data.get("@odata.nextLink")
-
-rows = []
+# One filtered query finds every BI security group; a second pass pulls its members
+groups = graph_get_all(".../groups?$filter=startswith(displayName,'pbi-sec')&$select=id,displayName")
 for g in groups:
-    url = (f"https://graph.microsoft.com/v1.0/groups/{g['id']}/members"
-           "?$select=id,displayName,userPrincipalName")
-    while url:
-        data = requests.get(url, headers=headers).json()
-        rows += [
-            {
-                "Group_Name": g["displayName"],
-                "Group_Object_ID": g["id"],
-                "User_Name": m.get("displayName"),
-                "User_Object_ID": m.get("id"),
-                "User_Principal_Name": m.get("userPrincipalName"),
-            }
-            for m in data.get("value", [])
-            if m.get("@odata.type") == "#microsoft.graph.user"
-        ]
-        url = data.get("@odata.nextLink")
-
-if rows:
-    (
-        spark.createDataFrame(rows)
-        .write.format("delta").mode("overwrite")
-        .option("overwriteSchema", "true")
-        .saveAsTable("pbi_security_audit.dbo.pbi_model_security_adgroup_user_details")
-    )
+    for m in graph_get_all(f".../groups/{g['id']}/members?$select=id,displayName,userPrincipalName"):
+        if m["@odata.type"] == "#microsoft.graph.user":
+            emit(g["displayName"], g["id"], m["displayName"], m["id"], m["userPrincipalName"])
+#  ->  Group_Name | Group_Object_ID | User_Name | User_Object_ID | User_Principal_Name
 ```
+
+> 📓 **Full runnable code:** [Step 4 in the notebook →](NB_Semantic_Model_Access_Audit.ipynb) — `graph_get_all`
+> is the paged Graph helper (`@odata.nextLink` follow); `/members` returns *direct* members, so swap in
+> `/transitiveMembers` for nested groups.
 
 Note what happened across Steps 3 and 4: the role member's `MemberID` (TOM) and the group's `id` (Graph) are **the same Entra object ID** — the join that lets the report connect *role → group → human being*.
 
-> 💡 No naming convention for BI security groups yet? This project is a good excuse to introduce one — the alternative is enumerating the whole tenant. And `/members` returns *direct* members only; for nested groups use `/transitiveMembers`.
+> 💡 No naming convention for BI security groups yet? This project is a good excuse to introduce one — the alternative is enumerating the whole tenant.
 
 ---
 
@@ -470,70 +243,18 @@ Note what happened across Steps 3 and 4: the role member's `MemberID` (TOM) and 
 Model-level security means nothing if someone is workspace Admin. `GET /v1/workspaces/{id}/roleAssignments` returns every principal with a role; where the principal is a group we expand it to people using the Step 4 table:
 
 ```python
-import msal, requests, json
-import pandas as pd
-
-with open("/lakehouse/default/Files/pbi_security_audit/config.json") as f:
-    config = json.load(f)
-
-WORKSPACE_NAMES = [
-    "Contoso Finance Self-Service BI",
-    "Contoso Sales Self-Service BI",
-    "Contoso Operations Self-Service BI",
-]
-
-app = msal.ConfidentialClientApplication(
-    config["CLIENT_ID"],
-    authority=f"https://login.microsoftonline.com/{config['TENANT_ID']}",
-    client_credential=config["CLIENT_SECRET"],
-)
-token = app.acquire_token_for_client(
-    scopes=["https://api.fabric.microsoft.com/.default"]
-)["access_token"]
-headers = {"Authorization": f"Bearer {token}"}
-FABRIC = "https://api.fabric.microsoft.com"
-
-all_ws = requests.get(f"{FABRIC}/v1/workspaces", headers=headers).json()["value"]
-lookup = {w["displayName"]: w["id"] for w in all_ws}
-workspaces = [{"id": lookup[n], "name": n} for n in WORKSPACE_NAMES if n in lookup]
-
-frames = []
 for ws in workspaces:
-    data = requests.get(
-        f"{FABRIC}/v1/workspaces/{ws['id']}/roleAssignments", headers=headers
-    ).json().get("value", [])
-    if not data:
-        continue
-    df = pd.json_normalize(data).rename(columns={
-        "principal.displayName": "Name",
-        "principal.type": "Type",
-        "principal.userDetails.userPrincipalName": "Email",
-        "role": "Role",
-    })
-    df["Workspace"] = ws["name"]
-    frames.append(df[["Workspace", "Name", "Email", "Type", "Role"]])
+    for a in fabric_get(f"/v1/workspaces/{ws['id']}/roleAssignments"):
+        p = a["principal"]
+        emit(ws["name"], p["displayName"],
+             p.get("userDetails", {}).get("userPrincipalName"), p["type"], a["role"])
 
-combined = pd.concat(frames, ignore_index=True)
-
-# Expand group principals to individual users
-df_ad = spark.sql("""
-    SELECT Group_Name, User_Principal_Name AS Group_Member_Email
-    FROM pbi_security_audit.dbo.pbi_model_security_adgroup_user_details
-""").toPandas()
-
-combined = combined.merge(
-    df_ad, how="left", left_on="Name", right_on="Group_Name"
-).drop(columns=["Group_Name"])
-combined["Email"] = combined["Group_Member_Email"].combine_first(combined["Email"])
-combined = combined.drop(columns=["Group_Member_Email"])
-
-(
-    spark.createDataFrame(combined)
-    .write.format("delta").mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable("pbi_security_audit.dbo.pbi_workspace_access_audit_details")
-)
+# Any principal of type Group is expanded to its members via the Step 4 table,
+# so the report always resolves to actual people — with Email included.
 ```
+
+> 📓 **Full runnable code:** [Step 5 in the notebook →](NB_Semantic_Model_Access_Audit.ipynb) — the workspace
+> name→id lookup, the `pd.json_normalize` flattening of the `principal.*` fields, and the group-expansion merge.
 
 | Workspace | Name | Email | Type | Role |
 |---|---|---|---|---|
@@ -552,7 +273,7 @@ combined = combined.drop(columns=["Group_Member_Email"])
 ## Get the notebook — and check it's correct
 
 All five steps above are compiled into one **self-contained** Fabric notebook:
-**[`NB_Semantic_Model_Access_Audit.ipynb`](assets/NB_Semantic_Model_Access_Audit.ipynb)** — no SharePoint, no config
+**[`NB_Semantic_Model_Access_Audit.ipynb`](NB_Semantic_Model_Access_Audit.ipynb)** — no SharePoint, no config
 file, no external module. Import it (*Workspace → Import → Notebook*), then fill in a single **CONFIG** cell: your
 service-principal `TENANT_ID` / `CLIENT_ID` / `CLIENT_SECRET`, and a `MODELS` list of the `(workspace, semantic model)`
 pairs to audit. Run the install cell, **restart the kernel** (service-principal auth needs `semantic-link` ≥ 0.12.0),
