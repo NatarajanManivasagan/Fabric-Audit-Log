@@ -8,6 +8,12 @@
 
 **Level:** Intermediate · **Read:** ~18 min · **Requires:** Microsoft Fabric + an Entra service principal · **Published:** Tuesday, September 1, 2026
 
+| Authors | | |
+|---|---|---|
+| **Natarajan Manivasagan** · *Author* | [LinkedIn](https://www.linkedin.com/in/natarajan-manivasagan/) | [Fabric Community](https://community.fabric.microsoft.com/users/natarajan_m/1345926) |
+| **Praful Potphode** · *Co-author* | [LinkedIn](https://www.linkedin.com/in/praful-p-912349241/) | [Fabric Community](https://community.fabric.microsoft.com/users/praful_potphode/1261729) |
+| **Hardik Sri** · *Co-author* | [LinkedIn](https://www.linkedin.com/in/hardiksri98/) | [Fabric Community](https://community.fabric.microsoft.com/users/hardiksri/1586944) |
+
 > 📦 **Grab the sample project.** The finished report and semantic model are downloadable as a **PBIP template**
 > (`contoso-access-audit-pbip.zip`) wired to fabricated CSV data — it opens in Power BI Desktop with no tenant,
 > no service principal and no credentials. Unzip to `C:\ContosoAccessAudit`, open the `.pbip`, hit Refresh, and
@@ -543,14 +549,6 @@ If you build something similar (or find a better way around the scale-out drain)
 ## Questions & suggestions
 
 Questions, corrections, or a cleaner way around the scale-out drain? I'd genuinely like to hear it — leave a comment below, or reach out to the authors directly. Issues and pull requests on the [companion repo](https://github.com/NatarajanManivasagan/Fabric-Audit-Log) are welcome too.
-
-## About the authors
-
-| Role | Name | Connect |
-|---|---|---|
-| **Author** | Natarajan Manivasagan | [LinkedIn](https://www.linkedin.com/in/natarajan-manivasagan/) · [Fabric Community](https://community.fabric.microsoft.com/users/natarajan_m/1345926) |
-| **Co-author** | Praful Potphode | [LinkedIn](https://www.linkedin.com/in/praful-p-912349241/) · [Fabric Community](https://community.fabric.microsoft.com/users/praful_potphode/1261729) |
-| **Co-author** | Hardik Sri | [LinkedIn](https://www.linkedin.com/in/hardiksri98/) · [Fabric Community](https://community.fabric.microsoft.com/users/hardiksri/1586944) |
 
 ## Further reading
 
