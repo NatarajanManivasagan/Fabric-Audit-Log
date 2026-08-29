@@ -54,17 +54,9 @@ So we built the audit *as a data product*: Fabric notebooks harvest security met
 | 4 | **Lakehouse `pbi_security_audit`** | The audit store — one Delta table per question. |
 | 5 | **Semantic model + 6-page report** | The consumption layer. |
 
-The pipeline is one-way — the inventory drives the notebooks, each step lands one Delta table, and the model and report sit on top:
+The pipeline is one-way: the inventory drives the notebooks, each step lands one Delta table (Notebook 1 does inventory, RLS/OLS, role memberships and AD-group expansion; Notebook 2 does the workspace-role scan), and the semantic model and report sit on top.
 
-| Source | Notebook step | Lands in |
-|---|---|---|
-| SharePoint inventory | **Notebook 1** — model inventory | `pbi_model_details` |
-| ↳ | **Notebook 1** — RLS/OLS via TOM | `pbi_model_security_audit_details` |
-| ↳ | **Notebook 1** — role memberships | `pbi_model_security_role_association_details` |
-| ↳ | **Notebook 1** — AD group expansion | `pbi_model_security_adgroup_user_details` |
-| ↳ | **Notebook 2** — workspace role scan | `pbi_workspace_access_audit_details` |
-
-> 🧭 **How the code is organized.** The steps below show the *essence* of each stage — the call that matters and the row it produces. The complete, runnable code lives in one notebook, **[`NB_Semantic_Model_Access_Audit.ipynb`](NB_Semantic_Model_Access_Audit.ipynb)** — a self-contained, DataFrame-first variant; the snippets here show the fuller **production** shape.
+> 🧭 **How the code is organized.** The steps below show the *essence* of each stage. The complete, runnable code lives in one notebook, **[`NB_Semantic_Model_Access_Audit.ipynb`](NB_Semantic_Model_Access_Audit.ipynb)** — a self-contained, DataFrame-first variant; the snippets show the **production** shape.
 
 ---
 
@@ -135,12 +127,7 @@ with connect_semantic_model(dataset, workspace, readonly=True) as tom:
                      visibility=effective_visibility(role, table, column), kind="OLS")
 ```
 
-Sample output (fabricated):
-
-| Workspace | Semantic_Model | Role_Name | Table_Name | Column_Name | Filter | Filter_Type | Visibility |
-|---|---|---|---|---|---|---|---|
-| Contoso Finance Self-Service BI | Finance Semantic Model | Cost Center - Dynamic | Dim Cost Center | | `[Cost Center Code] IN {"CC-1001","CC-1044"}` | RLS | |
-| Contoso Finance Self-Service BI | Finance Semantic Model | Finance - All | Dim Employee | Salary | | OLS | Hidden |
+Each RLS row carries the DAX filter (e.g. `[Cost Center Code] IN {"CC-1001","CC-1044"}`); each OLS row carries `Effective_Visibility` (e.g. `Dim Employee[Salary]` → `Hidden` for the `Finance - All` role).
 
 Two design choices worth calling out:
 
@@ -180,17 +167,7 @@ for workspace, dataset in models:
 
 ## Step 4 — Expand AD groups into users via Microsoft Graph
 
-Roles map to **Entra ID groups**, not individuals. A naming convention (`pbi-sec-*`) makes the lookup one filtered Graph query; a second pass pulls members:
-
-```python
-# One filtered query finds every BI security group; a second pass pulls its members
-groups = graph_get_all(".../groups?$filter=startswith(displayName,'pbi-sec')&$select=id,displayName")
-for g in groups:
-    for m in graph_get_all(f".../groups/{g['id']}/members?$select=id,displayName,userPrincipalName"):
-        if m["@odata.type"] == "#microsoft.graph.user":
-            emit(g["displayName"], g["id"], m["displayName"], m["id"], m["userPrincipalName"])
-#  ->  Group_Name | Group_Object_ID | User_Name | User_Object_ID | User_Principal_Name
-```
+Roles map to **Entra ID groups**, not individuals. A naming convention (`pbi-sec-*`) makes the lookup one filtered Graph query (`/groups?$filter=startswith(displayName,'pbi-sec')`); a second pass over each group's `/members` pulls the users, emitting `Group_Name`, `Group_Object_ID`, `User_Name`, `User_Object_ID` and `User_Principal_Name`.
 
 The linchpin: the role member's `MemberID` (TOM, Step 3) and the group's `id` (Graph, here) are **the same Entra object ID** — the join that connects *role → group → human being*.
 
@@ -211,10 +188,7 @@ for ws in workspaces:
 # Group principals are expanded to members via the Step 4 table — Email included.
 ```
 
-| Workspace | Name | Email | Type | Role |
-|---|---|---|---|---|
-| Contoso Finance Self-Service BI | pbi-sec-finance-developers | alex.chen@contoso.com | Group | Contributor |
-| Contoso Finance Self-Service BI | Jordan Lee | jordan.lee@contoso.com | User | Admin |
+Each row is a workspace principal (user, group, or service principal) with its role — e.g. *Jordan Lee → Admin* on *Contoso Finance Self-Service BI*, the row that matters below.
 
 **Scheduling:** both notebooks are idempotent, so a Fabric pipeline runs them sequentially off-hours, then refreshes the model. The scale-out workaround adds ~5 minutes per affected model.
 
@@ -315,10 +289,9 @@ The CSV headers are the same snake_case names the notebooks write, so the templa
 
 ## Lessons learned
 
-1. **Query scale-out silently breaks security extraction.** Read replicas don't reliably serve role/membership metadata. Detect, drain, extract on the primary, restore. Our biggest time sink.
+1. **Query scale-out silently breaks security extraction.** Read replicas don't reliably serve role/membership metadata. Detect, drain, extract on the primary, restore — our biggest time sink.
 2. **Record errors as data.** "SP not in workspace" becomes an `ERROR` row on the report — a visible finding, not a silent hole.
-3. **Object IDs beat names as join keys.** Names get renamed; object IDs don't.
-4. **Translate DAX for your auditors.** The persona matrix turned the report from "a developer tool" into "the thing compliance signs off on".
+3. **Translate DAX for your auditors.** The persona matrix turned the report from "a developer tool" into "the thing compliance signs off on".
 
 ---
 
