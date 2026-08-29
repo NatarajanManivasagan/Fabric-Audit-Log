@@ -61,16 +61,17 @@ So we built the audit *as a data product*: Fabric notebooks harvest security met
 | 4 | **Lakehouse `pbi_security_audit`** | The audit store — one Delta table per question domain. |
 | 5 | **Semantic model + 6-page report** | The consumption layer. |
 
-```
-SharePoint inventory ──►  Notebook 1: model inventory        ──►  pbi_model_details
-                          Notebook 1: RLS/OLS via TOM         ──►  pbi_model_security_audit_details
-                          Notebook 1: role memberships        ──►  pbi_model_security_role_association_details
-                          Notebook 1: AD group expansion      ──►  pbi_model_security_adgroup_user_details
-                          Notebook 2: workspace role scan     ──►  pbi_workspace_access_audit_details
-                                                                        │
-                                                                        ▼
-                                                          Semantic model + audit report
-```
+The pipeline is one-way — the SharePoint inventory drives the notebooks, each notebook step lands one Delta table, and the semantic model and report sit on top:
+
+| Source | Notebook step | Lands in |
+|---|---|---|
+| SharePoint inventory | **Notebook 1** — model inventory | `pbi_model_details` |
+| ↳ | **Notebook 1** — RLS/OLS via TOM | `pbi_model_security_audit_details` |
+| ↳ | **Notebook 1** — role memberships | `pbi_model_security_role_association_details` |
+| ↳ | **Notebook 1** — AD group expansion | `pbi_model_security_adgroup_user_details` |
+| ↳ | **Notebook 2** — workspace role scan | `pbi_workspace_access_audit_details` |
+
+→ The five tables feed a **semantic model**, and the six-page **audit report** sits on top.
 
 > 🧭 **How the code is organized.** The steps below show the *essence* of each stage — the one call that matters and
 > the shape of the row it produces — so the walkthrough stays readable. The complete, runnable code lives in a single
@@ -383,15 +384,11 @@ in
 
 Six tables — **Audit Details**, **Role AD Group Association**, **AD Group User Association**, **Workspace Access Details**, **Dynamic Role Persona Details** (a persona → filter-attribute matrix filtered to `Active = "1"`), and a generated **Last Updated Time** — joined by three relationships:
 
-```
-Audit Details[Key] ─────────────── Role AD Group Association[Key]
-        (Workspace | Model | Role composite key)
-
-Role AD Group Association[Group Object ID] ─── AD Group User Association[Group Object ID]
-        ★ the linchpin
-
-Dynamic Role Persona Details[AD_Group] ─────── AD Group User Association[Group Name]
-```
+| From table | Joined on | To table |
+|---|---|---|
+| Audit Details | `Key` — the `Workspace \| Model \| Role` composite key | Role AD Group Association |
+| Role AD Group Association | `Group Object ID` — **★ the linchpin** | AD Group User Association |
+| Dynamic Role Persona Details | `AD_Group` (AD group name) | AD Group User Association |
 
 ![Data model diagram — Audit Details joins to Role AD Group Association on a composite Workspace-Model-Role key; Role AD Group Association joins to AD Group User Association on Group Object ID; Dynamic Role Persona Details joins to AD Group User Association on AD group name. Workspace Access Details and Last Updated Time stand alone.](assets/data-model-diagram.png)
 
