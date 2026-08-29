@@ -10,7 +10,7 @@
 > while you read. Details in [Part 2](Part%202%20-%20The%20Semantic%20Model%20and%20Audit%20Report.md).
 >
 > 📓 The whole pipeline is also compiled into one runnable notebook —
-> **[`NB_Semantic_Model_Access_Audit.ipynb`](assets/NB_Semantic_Model_Access_Audit.ipynb)** ([get it below](#get-the-notebook--and-check-its-correct)).
+> **[`NB_Semantic_Model_Access_Audit.ipynb`](NB_Semantic_Model_Access_Audit.ipynb)** ([get it below](#get-the-notebook--and-check-its-correct)).
 
 ---
 
@@ -619,7 +619,7 @@ Both notebooks are idempotent (`overwrite` + `overwriteSchema`), so orchestratio
 ## Get the notebook — and check it's correct
 
 All five steps above are compiled into one **self-contained** Fabric notebook:
-**[`NB_Semantic_Model_Access_Audit.ipynb`](assets/NB_Semantic_Model_Access_Audit.ipynb)** — no SharePoint, no config
+**[`NB_Semantic_Model_Access_Audit.ipynb`](NB_Semantic_Model_Access_Audit.ipynb)** — no SharePoint, no config
 file, no external module. Import it (*Workspace → Import → Notebook*), then fill in a single **CONFIG** cell: your
 service-principal `TENANT_ID` / `CLIENT_ID` / `CLIENT_SECRET`, and a `MODELS` list of the `(workspace, semantic model)`
 pairs to audit. Run the install cell, **restart the kernel** (service-principal auth needs `semantic-link` ≥ 0.12.0),
@@ -714,6 +714,26 @@ But nobody from compliance wants to run SQL. In [**Part 2**](Part%202%20-%20The%
 
 ---
 
+## Questions & suggestions
+
+Questions, corrections, or a cleaner way around the scale-out drain? I'd genuinely like to hear it — leave a comment below, or reach out to the authors directly. Issues and pull requests on the [companion repo](https://github.com/NatarajanManivasagan/Fabric-Audit-Log) are welcome too.
+
+## About the authors
+
+| Role | Name | Contact |
+|---|---|---|
+| **Author** | *[your name]* | *[email · LinkedIn · GitHub]* |
+| **Co-author** | *[co-author name]* | *[email · LinkedIn · GitHub]* |
+
+## Further reading
+
+- [semantic-link-labs — documentation & source](https://github.com/microsoft/semantic-link-labs)
+- [Row-level security (RLS) in Power BI / Fabric](https://learn.microsoft.com/fabric/security/service-admin-row-level-security)
+- [Object-level security (OLS)](https://learn.microsoft.com/fabric/security/service-admin-object-level-security)
+- [Roles in workspaces — why a workspace Admin bypasses RLS](https://learn.microsoft.com/fabric/fundamentals/roles-workspaces)
+
+---
+
 > **This series** · **Part 1: Building the Audit Pipeline** *(you are here)* · [Part 2: The Semantic Model and Audit Report →](Part%202%20-%20The%20Semantic%20Model%20and%20Audit%20Report.md)
 
-*All workspace names, model names, group names, and IDs in this post are fictionalized. The patterns are real.*
+*The views in this post are my own and don't necessarily represent my employer. All workspace names, model names, group names, and IDs are fictionalized — the patterns are real.*

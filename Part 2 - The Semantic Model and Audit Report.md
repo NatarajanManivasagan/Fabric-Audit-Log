@@ -21,7 +21,7 @@ After Part 1, the `pbi_security_audit` lakehouse holds:
 The goal now: one report where a compliance reviewer can pick any semantic model and see **roles → filters → groups → people → workspace roles** without writing a line of SQL.
 
 *(The five steps that populate those tables are compiled into one runnable Fabric notebook —
-[`NB_Semantic_Model_Access_Audit.ipynb`](assets/NB_Semantic_Model_Access_Audit.ipynb), with a built-in validation section — covered in Part 1.)*
+[`NB_Semantic_Model_Access_Audit.ipynb`](NB_Semantic_Model_Access_Audit.ipynb), with a built-in validation section — covered in Part 1.)*
 
 ---
 
@@ -287,6 +287,26 @@ If you build something similar (or find a better way around the scale-out drain)
 
 ---
 
+## Questions & suggestions
+
+Questions, corrections, or a cleaner way around the scale-out drain? I'd genuinely like to hear it — leave a comment below, or reach out to the authors directly. Issues and pull requests on the [companion repo](https://github.com/NatarajanManivasagan/Fabric-Audit-Log) are welcome too.
+
+## About the authors
+
+| Role | Name | Contact |
+|---|---|---|
+| **Author** | *[your name]* | *[email · LinkedIn · GitHub]* |
+| **Co-author** | *[co-author name]* | *[email · LinkedIn · GitHub]* |
+
+## Further reading
+
+- [semantic-link-labs — documentation & source](https://github.com/microsoft/semantic-link-labs)
+- [Row-level security (RLS) in Power BI / Fabric](https://learn.microsoft.com/fabric/security/service-admin-row-level-security)
+- [Object-level security (OLS)](https://learn.microsoft.com/fabric/security/service-admin-object-level-security)
+- [Roles in workspaces — why a workspace Admin bypasses RLS](https://learn.microsoft.com/fabric/fundamentals/roles-workspaces)
+
+---
+
 > **This series** · [← Part 1: Building the Audit Pipeline](Part%201%20-%20Building%20the%20Power%20BI%20Access%20Audit%20Pipeline%20in%20Fabric.md) · **Part 2: The Semantic Model and Audit Report** *(you are here)*
 
-*All workspace names, model names, group names, and IDs in this post are fictionalized. The patterns are real.*
+*The views in this post are my own and don't necessarily represent my employer. All workspace names, model names, group names, and IDs are fictionalized — the patterns are real.*
