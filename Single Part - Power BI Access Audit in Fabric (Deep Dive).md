@@ -6,7 +6,7 @@
 
 `Microsoft Fabric` · `Power BI` · `RLS / OLS` · `Security & Governance`
 
-**Level:** Intermediate · **Read:** ~18 min · **Requires:** Microsoft Fabric + an Entra service principal · **Published:** *[add publish date]*
+**Level:** Intermediate · **Read:** ~18 min · **Requires:** Microsoft Fabric + an Entra service principal · **Published:** Tuesday, September 1, 2026
 
 > 📦 **Grab the sample project.** The finished report and semantic model are downloadable as a **PBIP template**
 > (`contoso-access-audit-pbip.zip`) wired to fabricated CSV data — it opens in Power BI Desktop with no tenant,
@@ -546,10 +546,11 @@ Questions, corrections, or a cleaner way around the scale-out drain? I'd genuine
 
 ## About the authors
 
-| Role | Name | Contact |
+| Role | Name | Connect |
 |---|---|---|
-| **Author** | *[your name]* | *[email · LinkedIn · GitHub]* |
-| **Co-author** | *[co-author name]* | *[email · LinkedIn · GitHub]* |
+| **Author** | Natarajan Manivasagan | [LinkedIn](https://www.linkedin.com/in/natarajan-manivasagan/) · [Fabric Community](https://community.fabric.microsoft.com/users/natarajan_m/1345926) |
+| **Co-author** | Praful Potphode | [LinkedIn](https://www.linkedin.com/in/praful-p-912349241/) · [Fabric Community](https://community.fabric.microsoft.com/users/praful_potphode/1261729) |
+| **Co-author** | Hardik Sri | [LinkedIn](https://www.linkedin.com/in/hardiksri98/) · [Fabric Community](https://community.fabric.microsoft.com/users/hardiksri/1586944) |
 
 ## Further reading
 
