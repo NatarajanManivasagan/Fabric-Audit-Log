@@ -38,6 +38,10 @@ workspace roles into a lakehouse, and a Power BI report answers five questions o
 - An Entra **app registration (service principal)** with Microsoft Graph **`Group.Read.All`**, added to every audited
   workspace, plus the tenant setting *Service principals can use Fabric APIs* and an XMLA endpoint set to at least *Read*.
 
+## License
+
+Released under the [MIT License](LICENSE) — the code and sample are free to use, adapt, and build on.
+
 ## Note
 
 Every workspace name, model, role, group, user and ID in this repository is **fabricated ("Contoso")** — it is a

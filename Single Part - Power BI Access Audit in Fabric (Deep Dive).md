@@ -1,8 +1,12 @@
 # Who Can See What? A Complete Power BI Access Audit Solution in Microsoft Fabric
 
+![Cover — "Who can see what? Auditing Power BI semantic model security in Microsoft Fabric." Fabric notebooks harvest RLS/OLS, role memberships, AD groups and workspace roles into a lakehouse; a Power BI report answers every access question on demand.](assets/cover-image.png)
+
 *A deep dive: Fabric notebooks harvest RLS/OLS definitions, role memberships, AD group members, and workspace roles into a lakehouse — and a Power BI report on top answers every "who can see what?" question on demand.*
 
-`Microsoft Fabric` · `Power BI` · `RLS / OLS` · `Security & Governance` · ~18 min read
+`Microsoft Fabric` · `Power BI` · `RLS / OLS` · `Security & Governance`
+
+**Level:** Intermediate · **Read:** ~18 min · **Requires:** Microsoft Fabric + an Entra service principal · **Published:** *[add publish date]*
 
 > 📦 **Grab the sample project.** The finished report and semantic model are downloadable as a **PBIP template**
 > (`contoso-access-audit-pbip.zip`) wired to fabricated CSV data — it opens in Power BI Desktop with no tenant,
