@@ -2,6 +2,8 @@
 
 Companion code and write-up for the blog **"Who Can See What? Auditing Power BI Semantic Model Security in Microsoft Fabric."**
 
+![Visual summary — the "who can see what?" question flows through a SharePoint inventory, an Entra ID service principal, Fabric notebooks, a lakehouse of five Delta tables, and a six-page audit report; with the RLS, OLS, Entra ID group and workspace-role motifs and the "a workspace Admin bypasses RLS" gap the audit catches.](assets/blog-summary-visual.png)
+
 A self-service BI platform eventually gets the audit question: *"who can see what in Power BI?"* This solution answers it
 as a **data product** — Fabric notebooks harvest RLS/OLS definitions, role memberships, Entra ID (AD) group members and
 workspace roles into a lakehouse, and a Power BI report answers five questions on demand:
